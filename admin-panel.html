@@ -225,6 +225,7 @@
             <div class="form-group">
                 <label>Роль</label>
                 <select id="keyRole">
+                    <option value="ghoul">Ghoul</option>
                     <option value="beta">Beta</option>
                     <option value="alpha">Alpha</option>
                     <option value="youtube">YouTube</option>
@@ -480,6 +481,7 @@
                                         <option value="youtube" ${user.role === 'youtube' ? 'selected' : ''}>YouTube</option>
                                         <option value="cracker" ${user.role === 'cracker' ? 'selected' : ''}>Cracker</option>
                                         <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                                        <option value="ghoul" ${user.role === 'ghoul' ? 'selected' : ''}>Ghoul</option>
                                     </select>
                                 </div>
                                 <div class="user-field">
