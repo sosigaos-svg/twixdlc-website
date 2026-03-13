@@ -201,4 +201,135 @@ router.put('/configs/:id/rename', authMiddleware, hasSubscription, (req, res) =>
   );
 });
 
+// Получение списка доступных лоадеров для пользователя
+router.get('/loaders/active', authMiddleware, (req, res) => {
+  const db = getDatabase();
+  
+  // Получаем роль пользователя
+  db.get('SELECT role FROM users WHERE id = ?', [req.userId], (err, user) => {
+    if (err || !user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    
+    const userRole = user.role.toLowerCase();
+    
+    // Проверяем подписку
+    if (userRole === 'user' || userRole === 'default') {
+      return res.status(403).json({ error: 'Требуется активная подписка' });
+    }
+    
+    // Иерархия ролей (от низшей к высшей)
+    const roleHierarchy = {
+      'beta': 1,
+      'youtuber': 2,
+      'ghoul': 3,
+      'admin': 4
+    };
+    
+    const userRoleLevel = roleHierarchy[userRole] || 0;
+    
+    // Получаем все активные лоадеры
+    db.all('SELECT * FROM active_loaders', [], (err, loaders) => {
+      if (err) {
+        return res.status(500).json({ error: 'Ошибка загрузки лоадеров' });
+      }
+      
+      // Фильтруем лоадеры по минимальной роли
+      const availableLoaders = loaders.filter(loader => {
+        const minRoleLevel = roleHierarchy[loader.min_role.toLowerCase()] || 1;
+        return userRoleLevel >= minRoleLevel;
+      });
+      
+      if (availableLoaders.length === 0) {
+        return res.json({ loaders: [] });
+      }
+      
+      // Получаем информацию о файлах
+      const loadersWithInfo = availableLoaders.map(loader => {
+        const loaderPath = path.join(__dirname, '../../', loader.loader_name);
+        let size = 0;
+        
+        try {
+          const stats = fs.statSync(loaderPath);
+          size = stats.size;
+        } catch (e) {
+          console.error('File not found:', loader.loader_name);
+        }
+        
+        return {
+          name: loader.loader_name,
+          displayName: `${loader.loader_name.replace('.jar', '')} (${loader.version})`,
+          version: loader.version,
+          size: size,
+          min_role: loader.min_role
+        };
+      });
+      
+      res.json({ loaders: loadersWithInfo });
+    });
+  });
+});
+
+// Скачивание конкретного лоадера
+router.get('/download/loader/:loaderName', authMiddleware, (req, res) => {
+  const db = getDatabase();
+  const { loaderName } = req.params;
+  
+  // Получаем роль пользователя
+  db.get('SELECT role FROM users WHERE id = ?', [req.userId], (err, user) => {
+    if (err || !user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    
+    const userRole = user.role.toLowerCase();
+    
+    // Проверяем подписку
+    if (userRole === 'user' || userRole === 'default') {
+      return res.status(403).json({ error: 'Требуется активная подписка' });
+    }
+    
+    // Иерархия ролей
+    const roleHierarchy = {
+      'beta': 1,
+      'youtuber': 2,
+      'ghoul': 3,
+      'admin': 4
+    };
+    
+    const userRoleLevel = roleHierarchy[userRole] || 0;
+    
+    // Проверяем, что лоадер активен и доступен для роли пользователя
+    db.get('SELECT * FROM active_loaders WHERE loader_name = ?', [loaderName], (err, loader) => {
+      if (err || !loader) {
+        return res.status(404).json({ error: 'Лоадер не найден или неактивен' });
+      }
+      
+      const minRoleLevel = roleHierarchy[loader.min_role.toLowerCase()] || 1;
+      
+      if (userRoleLevel < minRoleLevel) {
+        return res.status(403).json({ 
+          error: `Этот лоадер доступен только для роли ${loader.min_role} и выше` 
+        });
+      }
+      
+      // Проверяем существование файла
+      const loaderPath = path.join(__dirname, '../../', loaderName);
+      
+      if (!fs.existsSync(loaderPath)) {
+        return res.status(404).json({ error: 'Файл не найден' });
+      }
+      
+      // Отправляем файл
+      res.download(loaderPath, loaderName, (err) => {
+        if (err) {
+          console.error('Download error:', err);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Ошибка скачивания' });
+          }
+        }
+      });
+    });
+  });
+});
+
 module.exports = router;

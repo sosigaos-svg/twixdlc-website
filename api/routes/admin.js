@@ -417,24 +417,36 @@ router.get('/admin/loaders/:sessionUrl', async (req, res) => {
                     return res.status(403).json({ error: 'Недействительная сессия' });
                 }
 
-                // Получаем список активных лоадеров
-                db.all('SELECT loader_name FROM active_loaders', [], (err, activeLoaders) => {
-                    const activeNames = activeLoaders ? activeLoaders.map(l => l.loader_name) : [];
+                // Получаем список активных лоадеров с их настройками
+                db.all('SELECT * FROM active_loaders', [], (err, activeLoaders) => {
+                    const activeMap = {};
+                    if (activeLoaders) {
+                        activeLoaders.forEach(l => {
+                            activeMap[l.loader_name] = {
+                                active: true,
+                                version: l.version || '1.16.5',
+                                min_role: l.min_role || 'beta'
+                            };
+                        });
+                    }
                     
                     // Ищем все jar-файлы в корне проекта
                     const rootDir = path.join(__dirname, '../../');
                     const files = fs.readdirSync(rootDir);
                     const jarFiles = files.filter(file => file.endsWith('.jar')).map(file => {
                         const stats = fs.statSync(path.join(rootDir, file));
+                        const loaderInfo = activeMap[file] || { active: false, version: '1.16.5', min_role: 'beta' };
                         return {
                             name: file,
                             size: stats.size,
-                            active: activeNames.includes(file),
+                            active: loaderInfo.active,
+                            version: loaderInfo.version,
+                            min_role: loaderInfo.min_role,
                             modified: stats.mtime
                         };
                     });
 
-                    res.json({ loaders: jarFiles, activeLoaders: activeNames });
+                    res.json({ loaders: jarFiles });
                 });
             }
         );
@@ -448,7 +460,7 @@ router.get('/admin/loaders/:sessionUrl', async (req, res) => {
 // Добавление/удаление лоадера из активных
 router.post('/admin/toggle-active-loader', async (req, res) => {
     try {
-        const { sessionUrl, loaderName, active } = req.body;
+        const { sessionUrl, loaderName, active, version, minRole } = req.body;
         const db = getDb();
         const fs = require('fs');
         const path = require('path');
@@ -468,10 +480,10 @@ router.post('/admin/toggle-active-loader', async (req, res) => {
                 }
 
                 if (active) {
-                    // Добавляем в активные
+                    // Добавляем в активные с версией и минимальной ролью
                     db.run(
-                        `INSERT OR IGNORE INTO active_loaders (loader_name) VALUES (?)`,
-                        [loaderName],
+                        `INSERT OR REPLACE INTO active_loaders (loader_name, version, min_role) VALUES (?, ?, ?)`,
+                        [loaderName, version || '1.16.5', minRole || 'beta'],
                         (err) => {
                             if (err) {
                                 console.error('Error adding active loader:', err);
@@ -571,6 +583,7 @@ router.post('/admin/upload-loader', async (req, res) => {
 
         const upload = multer({
             storage: storage,
+            limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
             fileFilter: (req, file, cb) => {
                 if (path.extname(file.originalname).toLowerCase() === '.jar') {
                     cb(null, true);

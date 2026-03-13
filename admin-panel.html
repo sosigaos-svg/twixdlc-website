@@ -600,7 +600,7 @@
                         <div style="margin-bottom: 16px; padding: 12px; background: rgba(59, 130, 246, 0.1); border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">
                             <strong>Активных лоадеров: ${activeCount}</strong>
                             <div style="font-size: 14px; color: var(--text-desc); margin-top: 4px;">
-                                При скачивании пользователь получит случайный лоадер из активных
+                                При скачивании пользователь получит случайный лоадер из доступных для его роли
                             </div>
                         </div>
                     ` + data.loaders.map(loader => `
@@ -613,14 +613,19 @@
                                     </div>
                                     <div class="user-email">
                                         Размер: ${(loader.size / 1024 / 1024).toFixed(2)} MB | 
+                                        Версия: ${loader.version || '1.16.5'} | 
+                                        Мин. роль: ${loader.min_role || 'beta'} |
                                         Изменен: ${new Date(loader.modified).toLocaleString('ru-RU')}
                                     </div>
                                 </div>
                                 <div class="user-actions">
-                                    <button class="btn btn-small" onclick="toggleActiveLoader('${loader.name}', ${!loader.active})">
-                                        ${loader.active ? 'Деактивировать' : 'Активировать'}
-                                    </button>
-                                    ${!loader.active ? `<button class="btn btn-small btn-danger" onclick="deleteLoader('${loader.name}')">Удалить</button>` : ''}
+                                    ${loader.active ? `
+                                        <button class="btn btn-small" onclick="editLoader('${loader.name}', '${loader.version}', '${loader.min_role}')">Настроить</button>
+                                        <button class="btn btn-small" onclick="toggleActiveLoader('${loader.name}', false)">Деактивировать</button>
+                                    ` : `
+                                        <button class="btn btn-small" onclick="activateLoader('${loader.name}')">Активировать</button>
+                                        <button class="btn btn-small btn-danger" onclick="deleteLoader('${loader.name}')">Удалить</button>
+                                    `}
                                 </div>
                             </div>
                         </div>
@@ -710,12 +715,18 @@
         }
 
         // Переключение активности лоадера
-        async function toggleActiveLoader(loaderName, active) {
+        async function toggleActiveLoader(loaderName, active, version, minRole) {
             try {
                 const response = await fetch(`${window.API_BASE_URL}/admin/toggle-active-loader`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionUrl, loaderName, active })
+                    body: JSON.stringify({ 
+                        sessionUrl, 
+                        loaderName, 
+                        active,
+                        version: version || '1.16.5',
+                        minRole: minRole || 'beta'
+                    })
                 });
 
                 const data = await response.json();
@@ -739,6 +750,28 @@
             }
         }
 
+        // Активация лоадера с выбором версии и роли
+        async function activateLoader(loaderName) {
+            const version = prompt('Введите версию Minecraft (например, 1.16.5 или 1.21.4):', '1.16.5');
+            if (!version) return;
+            
+            const minRole = prompt('Введите минимальную роль (beta, alpha, youtube, cracker, admin, ghoul):', 'beta');
+            if (!minRole) return;
+            
+            await toggleActiveLoader(loaderName, true, version, minRole);
+        }
+
+        // Редактирование настроек лоадера
+        async function editLoader(loaderName, currentVersion, currentMinRole) {
+            const version = prompt('Введите версию Minecraft:', currentVersion || '1.16.5');
+            if (!version) return;
+            
+            const minRole = prompt('Введите минимальную роль (beta, alpha, youtube, cracker, admin, ghoul):', currentMinRole || 'beta');
+            if (!minRole) return;
+            
+            await toggleActiveLoader(loaderName, true, version, minRole);
+        }
+
         // Удаление лоадера
         async function deleteLoader(loaderName) {
             if (!confirm(`Удалить ${loaderName}?`)) return;
@@ -757,6 +790,102 @@
                         window.__toast('Лоадер удален', 'success');
                     } else {
                         alert('Лоадер удален');
+                    }
+                    loadLoaders();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                if (window.__toast) {
+                    window.__toast(error.message, 'error');
+                } else {
+                    alert(error.message);
+                }
+            }
+        }
+
+        // Активация лоадера с настройками
+        async function activateLoader(loaderName) {
+            const version = prompt('Введите версию Minecraft (например, 1.16.5 или 1.21.4):', '1.16.5');
+            if (!version) return;
+
+            const minRole = prompt('Введите минимальную роль (beta, alpha, youtube, cracker, admin, ghoul):', 'beta');
+            if (!minRole) return;
+
+            const validRoles = ['beta', 'alpha', 'youtube', 'cracker', 'admin', 'ghoul'];
+            if (!validRoles.includes(minRole.toLowerCase())) {
+                alert('Неверная роль! Используйте: beta, alpha, youtube, cracker, admin или ghoul');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/admin/toggle-active-loader`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        sessionUrl, 
+                        loaderName, 
+                        active: true,
+                        version: version,
+                        minRole: minRole.toLowerCase()
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    if (window.__toast) {
+                        window.__toast(`${loaderName} активирован для ${minRole}+ (${version})`, 'success');
+                    } else {
+                        alert(`${loaderName} активирован`);
+                    }
+                    loadLoaders();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                if (window.__toast) {
+                    window.__toast(error.message, 'error');
+                } else {
+                    alert(error.message);
+                }
+            }
+        }
+
+        // Редактирование настроек лоадера
+        async function editLoader(loaderName, currentVersion, currentMinRole) {
+            const version = prompt('Введите версию Minecraft:', currentVersion || '1.16.5');
+            if (!version) return;
+
+            const minRole = prompt('Введите минимальную роль (beta, alpha, youtube, cracker, admin, ghoul):', currentMinRole || 'beta');
+            if (!minRole) return;
+
+            const validRoles = ['beta', 'alpha', 'youtube', 'cracker', 'admin', 'ghoul'];
+            if (!validRoles.includes(minRole.toLowerCase())) {
+                alert('Неверная роль! Используйте: beta, alpha, youtube, cracker, admin или ghoul');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${window.API_BASE_URL}/admin/toggle-active-loader`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        sessionUrl, 
+                        loaderName, 
+                        active: true,
+                        version: version,
+                        minRole: minRole.toLowerCase()
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    if (window.__toast) {
+                        window.__toast(`Настройки ${loaderName} обновлены`, 'success');
+                    } else {
+                        alert('Настройки обновлены');
                     }
                     loadLoaders();
                 } else {

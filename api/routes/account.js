@@ -281,8 +281,12 @@ router.get('/loaders/active', authMiddleware, (req, res) => {
       return res.status(403).json({ error: 'Требуется активная подписка' });
     }
     
+    // Иерархия ролей (от низшей к высшей)
+    const roleHierarchy = ['beta', 'alpha', 'youtube', 'cracker', 'admin', 'ghoul'];
+    const userRoleLevel = roleHierarchy.indexOf(role);
+    
     // Получаем все активные лоадеры
-    db.all('SELECT loader_name FROM active_loaders', [], (err, loaders) => {
+    db.all('SELECT * FROM active_loaders', [], (err, loaders) => {
       if (err) {
         return res.status(500).json({ error: 'Ошибка получения лоадеров' });
       }
@@ -290,7 +294,11 @@ router.get('/loaders/active', authMiddleware, (req, res) => {
       const fs = require('fs');
       const path = require('path');
       
-      const loadersWithInfo = loaders.map(loader => {
+      // Фильтруем лоадеры по доступу роли
+      const availableLoaders = loaders.filter(loader => {
+        const minRoleLevel = roleHierarchy.indexOf(loader.min_role || 'beta');
+        return userRoleLevel >= minRoleLevel;
+      }).map(loader => {
         const loaderPath = path.join(__dirname, '../../', loader.loader_name);
         let size = 0;
         
@@ -302,11 +310,12 @@ router.get('/loaders/active', authMiddleware, (req, res) => {
         return {
           name: loader.loader_name,
           size: size,
-          displayName: loader.loader_name.replace('.jar', '')
+          version: loader.version || '1.16.5',
+          displayName: `${loader.version || '1.16.5'} - ${loader.loader_name.replace('.jar', '')}`
         };
       });
       
-      res.json({ loaders: loadersWithInfo });
+      res.json({ loaders: availableLoaders });
     });
   });
 });

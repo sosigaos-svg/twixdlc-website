@@ -163,6 +163,8 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS active_loaders (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           loader_name TEXT UNIQUE NOT NULL,
+          version TEXT DEFAULT '1.16.5',
+          min_role TEXT DEFAULT 'beta',
           added_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
